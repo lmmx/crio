@@ -21,6 +21,16 @@ sudo apt update -y
 sudo apt install criu -y
 ```
 
+If `criu check --unprivileged` reports
+
+> `CRIU needs to have the CAP_SYS_ADMIN or the CAP_CHECKPOINT_RESTORE capability`
+
+then activate it first:
+
+```bash
+sudo setcap cap_checkpoint_restore+eip $(which criu)
+```
+
 ## Usage
 
 Write your script with a `crio.checkpoint()` context manager around the imports

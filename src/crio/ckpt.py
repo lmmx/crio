@@ -73,7 +73,20 @@ def checkpoint(context: dict | None = None):
         if (checkpoint_dir / "checkpoint.exists").exists():
             try:
                 subprocess.run(
-                    ["criu", "restore", "-D", str(checkpoint_dir)], check=True
+                    [
+                        "criu",
+                        "restore",
+                        "-D",
+                        str(checkpoint_dir),
+                        "--unprivileged",
+                        "--shell-job",
+                        "--skip-in-flight",
+                        "--ext-unix-sk",
+                        "--file-locks",
+                        "--link-remap",
+                        "--manage-cgroups",
+                    ],
+                    check=True,
                 )
             except subprocess.CalledProcessError:
                 raise RuntimeError("Checkpoint restore failed")
@@ -110,7 +123,22 @@ def checkpoint(context: dict | None = None):
                     # Create checkpoint
                     try:
                         subprocess.run(
-                            ["criu", "dump", "-t", str(pid), "-D", str(checkpoint_dir)],
+                            [
+                                "criu",
+                                "dump",
+                                "-t",
+                                str(pid),
+                                "-D",
+                                str(checkpoint_dir),
+                                "--unprivileged",
+                                "--shell-job",
+                                "--leave-running",  # Don't kill the process after dumping
+                                "--skip-in-flight",  # Skip in-flight TCP connections
+                                "--ext-unix-sk",  # External unix sockets
+                                "--file-locks",  # File locks
+                                "--link-remap",  # Handle symlinks
+                                "--manage-cgroups",  # Handle cgroups
+                            ],
                             check=True,
                         )
                         (checkpoint_dir / "checkpoint.exists").touch()
