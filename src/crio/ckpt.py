@@ -54,21 +54,18 @@ def checkpoint(context: dict | None = None):
 
     lock_file = base_checkpoint_dir / "crio.lock"
     lock_fd = None
+    child_pid = None
 
     try:
-        # Create base checkpoint directory
-        try:
-            base_checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            raise RuntimeError("Cannot create checkpoint directory - permission denied")
-
-        # Create tmp checkpoint directory
-        try:
-            tmp_checkpoint_dir.mkdir(parents=True, exist_ok=True)
-        except PermissionError:
-            raise RuntimeError(
-                "Cannot create temporary checkpoint directory - permission denied"
-            )
+        # Validate and create directories
+        for dir_path, err_msg in [
+            (base_checkpoint_dir, "checkpoint directory"),
+            (tmp_checkpoint_dir, "temporary checkpoint directory"),
+        ]:
+            try:
+                dir_path.mkdir(parents=True, exist_ok=True)
+            except PermissionError:
+                raise RuntimeError(f"Cannot create {err_msg} - permission denied")
 
         # Create symlink from base to tmp if it doesn't exist
         symlink_path = base_checkpoint_dir / "ckpt"
@@ -89,6 +86,7 @@ def checkpoint(context: dict | None = None):
 
         # Check for existing checkpoint
         if (tmp_checkpoint_dir / "checkpoint.exists").exists():
+            print("Found existing checkpoint, attempting restore...")
             try:
                 subprocess.run(
                     [
@@ -107,21 +105,33 @@ def checkpoint(context: dict | None = None):
                     ],
                     check=True,
                 )
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as e:
+                print(f"Checkpoint restore failed: {e}")
                 raise RuntimeError("Checkpoint restore failed")
+
         else:
+            # Fork and setup checkpoint process
             pid = os.fork()
 
             if pid == 0:  # Child process
-                # Clean up lock in child process
-                if lock_fd is not None:
-                    os.close(lock_fd)
                 try:
-                    yield  # Run imports
-                    os.kill(os.getpid(), signal.SIGSTOP)  # Suspend self
-                except BaseException:
+                    # Clean up lock in child process
+                    if lock_fd is not None:
+                        os.close(lock_fd)
+
+                    # Yield control back to the caller
+                    yield
+
+                    # If yield succeeds, stop the process for checkpoint
+                    os.kill(os.getpid(), signal.SIGSTOP)
+                except Exception as e:
+                    print(f"Child process error: {e}")
                     os._exit(1)
+                finally:
+                    os._exit(0)
+
             else:  # Parent process
+                child_pid = pid
                 try:
                     # Wait for child to stop with timeout
                     start_time = time.time()
@@ -131,16 +141,20 @@ def checkpoint(context: dict | None = None):
                             if os.WIFSTOPPED(status):
                                 break
                         except ProcessLookupError:
+                            print("Child process exited unexpectedly")
                             raise RuntimeError("Child process exited unexpectedly")
 
                         if time.time() - start_time > 5:  # 5 second timeout
+                            print("Child process failed to stop within timeout")
                             raise RuntimeError(
                                 "Child process failed to stop within timeout"
                             )
+
                         time.sleep(0.1)  # Prevent busy waiting
 
                     # Create checkpoint
                     try:
+                        print(f"Creating checkpoint for PID {pid}")
                         subprocess.run(
                             [
                                 "sudo",
@@ -160,24 +174,35 @@ def checkpoint(context: dict | None = None):
                                 "--manage-cgroups",  # Handle cgroups
                             ],
                             check=True,
+                            capture_output=True,
+                            text=True,
                         )
                         (tmp_checkpoint_dir / "checkpoint.exists").touch()
-                    except subprocess.CalledProcessError:
+                        print("Checkpoint created successfully")
+                    except subprocess.CalledProcessError as e:
+                        print(f"Checkpoint creation failed: {e.stderr}")
                         raise RuntimeError("Checkpoint creation failed")
-                except BaseException:
+                except Exception as e:
                     try:
-                        os.kill(pid, signal.SIGKILL)  # Clean up child process
+                        if child_pid:
+                            print(f"Cleaning up child process {child_pid}")
+                            os.kill(child_pid, signal.SIGKILL)
                     except ProcessLookupError:
                         pass  # Child already gone
                     raise
                 finally:
                     os._exit(0)  # Parent always exits after handling child
+
+    except Exception as e:
+        print(f"Checkpoint error: {e}")
+        raise
+
     finally:
         # Clean up lock file and descriptor
         if lock_fd is not None:
-            fcntl.flock(lock_fd, fcntl.LOCK_UN)
-            os.close(lock_fd)
             try:
+                fcntl.flock(lock_fd, fcntl.LOCK_UN)
+                os.close(lock_fd)
                 lock_file.unlink()
             except FileNotFoundError:
                 pass
