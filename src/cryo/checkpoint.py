@@ -2,6 +2,7 @@ import fcntl
 import os
 import signal
 import subprocess
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -10,30 +11,29 @@ from pathlib import Path
 def checkpoint():
     checkpoint_dir = Path("/tmp/crio")
     lock_file = checkpoint_dir / "crio.lock"
-
-    # Create directory if it doesn't exist
-    try:
-        checkpoint_dir.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
-        raise RuntimeError("Cannot create checkpoint directory - permission denied")
-
-    # Try to acquire lock file first - fail fast if we can't write
-    try:
-        lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
-    except PermissionError:
-        raise RuntimeError("Cannot create lock file - permission denied")
+    lock_fd = None
 
     try:
-        # Non-blocking lock attempt
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except IOError:
-        os.close(lock_fd)
-        raise RuntimeError("Another crio process is running")
+        # Create checkpoint directory
+        try:
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            raise RuntimeError("Cannot create checkpoint directory - permission denied")
 
-    try:
-        # Now we have the lock, check for existing checkpoint
+        # Acquire lock file
+        try:
+            lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (PermissionError, IOError) as e:
+            if lock_fd is not None:
+                os.close(lock_fd)
+            if isinstance(e, PermissionError):
+                raise RuntimeError("Cannot create lock file - permission denied")
+            else:
+                raise RuntimeError("Another crio process is running")
+
+        # Check for existing checkpoint
         if (checkpoint_dir / "checkpoint.exists").exists():
-            # Restore
             try:
                 subprocess.run(
                     ["criu", "restore", "-D", str(checkpoint_dir)], check=True
@@ -42,34 +42,57 @@ def checkpoint():
                 raise RuntimeError("Checkpoint restore failed")
         else:
             pid = os.fork()
-            if pid == 0:  # Child
-                # Child doesn't need the lock
-                os.close(lock_fd)
+
+            if pid == 0:  # Child process
+                # Clean up lock in child process
+                if lock_fd is not None:
+                    os.close(lock_fd)
                 try:
-                    yield
-                    os.kill(os.getpid(), signal.SIGSTOP)
+                    yield  # Run imports
+                    os.kill(os.getpid(), signal.SIGSTOP)  # Suspend self
                 except BaseException:
-                    # Make sure child exits on any error
                     os._exit(1)
-            else:  # Parent
+            else:  # Parent process
                 try:
-                    # Wait for child to stop
-                    os.waitpid(pid, 0)
-                    # Try checkpoint
-                    subprocess.run(
-                        ["criu", "dump", "-t", str(pid), "-D", str(checkpoint_dir)],
-                        check=True,
-                    )
-                    # Mark success
-                    (checkpoint_dir / "checkpoint.exists").touch()
+                    # Wait for child to stop with timeout
+                    start_time = time.time()
+                    while True:
+                        try:
+                            _, status = os.waitpid(pid, os.WUNTRACED)
+                            if os.WIFSTOPPED(status):
+                                break
+                        except ProcessLookupError:
+                            raise RuntimeError("Child process exited unexpectedly")
+
+                        if time.time() - start_time > 5:  # 5 second timeout
+                            raise RuntimeError(
+                                "Child process failed to stop within timeout"
+                            )
+                        time.sleep(0.1)  # Prevent busy waiting
+
+                    # Create checkpoint
+                    try:
+                        subprocess.run(
+                            ["criu", "dump", "-t", str(pid), "-D", str(checkpoint_dir)],
+                            check=True,
+                        )
+                        (checkpoint_dir / "checkpoint.exists").touch()
+                    except subprocess.CalledProcessError:
+                        raise RuntimeError("Checkpoint creation failed")
                 except BaseException:
-                    # Kill child if anything went wrong
-                    os.kill(pid, signal.SIGKILL)
+                    try:
+                        os.kill(pid, signal.SIGKILL)  # Clean up child process
+                    except ProcessLookupError:
+                        pass  # Child already gone
                     raise
                 finally:
-                    # Clean up parent
-                    os._exit(0)
+                    os._exit(0)  # Parent always exits after handling child
     finally:
-        # Release lock and close file descriptor
-        fcntl.flock(lock_fd, fcntl.LOCK_UN)
-        os.close(lock_fd)
+        # Clean up lock file and descriptor
+        if lock_fd is not None:
+            fcntl.flock(lock_fd, fcntl.LOCK_UN)
+            os.close(lock_fd)
+            try:
+                lock_file.unlink()
+            except FileNotFoundError:
+                pass
