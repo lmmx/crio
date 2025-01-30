@@ -1,19 +1,19 @@
 [project]
-name = "criu"
+name = "crio"
 version = "0.1.0"
-description = "Add your description here"
+description = "Freeze Python processes after imports using CRIU (Checkpoint/Restore In Userspace)"
 readme = "README.md"
 authors = [
     { name = "Louis Maddox", email = "louismmx@gmail.com" }
 ]
 requires-python = ">=3.10"
-dependencies = [
-    "torch>=2.6.0",
-]
+dependencies = []
 
 [project.scripts]
-criu = "criu:main"
+crio = "crio:main"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = [
+  "pdm-backend"
+]
+build-backend = "pdm.backend"
