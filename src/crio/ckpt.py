@@ -36,10 +36,8 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
             if k.startswith(("PYTHONPATH", "PYTHONHOME"))
         },
     }
-
     if context is not None:
         checkpoint_context.update(context)
-
     context_str = json.dumps(checkpoint_context, sort_keys=True)
     return hashlib.sha256(context_str.encode()).hexdigest()[:16]
 
@@ -48,14 +46,11 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
 def checkpoint(context: dict | None = None):
     # Base user-level checkpoint directory
     base_checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
-
     # Temporary checkpoint directory in /tmp
     tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
-
     lock_file = base_checkpoint_dir / "crio.lock"
     lock_fd = None
     child_pid = None
-
     try:
         # Validate and create directories
         for dir_path, err_msg in [
@@ -66,12 +61,10 @@ def checkpoint(context: dict | None = None):
                 dir_path.mkdir(parents=True, exist_ok=True)
             except PermissionError:
                 raise RuntimeError(f"Cannot create {err_msg} - permission denied")
-
         # Create symlink from base to tmp if it doesn't exist
         symlink_path = base_checkpoint_dir / "ckpt"
         if not symlink_path.exists():
             symlink_path.symlink_to(tmp_checkpoint_dir)
-
         # Acquire lock file
         try:
             lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
@@ -83,7 +76,6 @@ def checkpoint(context: dict | None = None):
                 raise RuntimeError("Cannot create lock file - permission denied")
             else:
                 raise RuntimeError("Another crio process is running")
-
         # Check for existing checkpoint
         if (tmp_checkpoint_dir / "checkpoint.exists").exists():
             print("Found existing checkpoint, attempting restore...")
@@ -108,20 +100,19 @@ def checkpoint(context: dict | None = None):
             except subprocess.CalledProcessError as e:
                 print(f"Checkpoint restore failed: {e}")
                 raise RuntimeError("Checkpoint restore failed")
-
+            else:
+                yield
+                return  # Exit the context manager early if restore succeeds
         else:
             # Fork and setup checkpoint process
             pid = os.fork()
-
             if pid == 0:  # Child process
                 try:
                     # Clean up lock in child process
                     if lock_fd is not None:
                         os.close(lock_fd)
-
                     # Yield control back to the caller
                     yield
-
                     # If yield succeeds, stop the process for checkpoint
                     os.kill(os.getpid(), signal.SIGSTOP)
                 except Exception as e:
@@ -129,7 +120,6 @@ def checkpoint(context: dict | None = None):
                     os._exit(1)
                 finally:
                     os._exit(0)
-
             else:  # Parent process
                 child_pid = pid
                 try:
@@ -143,15 +133,12 @@ def checkpoint(context: dict | None = None):
                         except ProcessLookupError:
                             print("Child process exited unexpectedly")
                             raise RuntimeError("Child process exited unexpectedly")
-
                         if time.time() - start_time > 5:  # 5 second timeout
                             print("Child process failed to stop within timeout")
                             raise RuntimeError(
                                 "Child process failed to stop within timeout"
                             )
-
                         time.sleep(0.1)  # Prevent busy waiting
-
                     # Create checkpoint
                     try:
                         print(f"Creating checkpoint for PID {pid}")
@@ -192,11 +179,9 @@ def checkpoint(context: dict | None = None):
                     raise
                 finally:
                     os._exit(0)  # Parent always exits after handling child
-
     except Exception as e:
         print(f"Checkpoint error: {e}")
         raise
-
     finally:
         # Clean up lock file and descriptor
         if lock_fd is not None:
@@ -215,7 +200,6 @@ def clear_checkpoints(context: dict | None = None) -> None:
         # Remove specific checkpoint
         base_checkpoint_dir = base_dir / _generate_checkpoint_id(context)
         tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
-
         # Remove symlink and base checkpoint dir
         if base_checkpoint_dir.exists():
             import shutil
@@ -224,15 +208,13 @@ def clear_checkpoints(context: dict | None = None) -> None:
             symlink_path = base_checkpoint_dir / "ckpt"
             if symlink_path.is_symlink():
                 symlink_path.unlink()
-
             # Remove base checkpoint directory
             shutil.rmtree(base_checkpoint_dir)
+            # Remove tmp checkpoint directory
+            if tmp_checkpoint_dir.exists():
+                import shutil
 
-        # Remove tmp checkpoint directory
-        if tmp_checkpoint_dir.exists():
-            import shutil
-
-            shutil.rmtree(tmp_checkpoint_dir)
+                shutil.rmtree(tmp_checkpoint_dir)
     else:
         # Remove all checkpoints
         import glob
@@ -241,7 +223,6 @@ def clear_checkpoints(context: dict | None = None) -> None:
         # Remove user cache dir checkpoints
         shutil.rmtree(base_dir)
         base_dir.mkdir(parents=True)
-
         # Remove all /tmp criu checkpoint directories
         for tmp_dir in glob.glob("/tmp/criu-*"):
             shutil.rmtree(tmp_dir)
