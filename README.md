@@ -8,7 +8,7 @@ after heavy imports — `crio` enables near-instant startup in subsequent runs.
 ## Installation
 
 ```shell
-pip install crio
+pip install git+https://github.com/lmmx/crio.git # pip install crio
 ```
 
 ### Dependencies
