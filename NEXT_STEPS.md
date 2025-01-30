@@ -53,4 +53,5 @@ I am unsure why this process is still hanging around (it was supposed to be hand
 
 There is an earlier version in the repo `ckpt_early.py` which is slightly different (it prints the
 warnings) but otherwise has the same behaviour as the more recent version `ckpt_forked.py`.
-I also had an attempt using `os.v
+I also had an attempt using `os.execvp` which is included as an idea but it doesn't work:
+`ckpt_execvp.py`
