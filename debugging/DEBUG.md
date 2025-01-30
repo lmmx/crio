@@ -18,6 +18,29 @@ sudo apt install criu
 sudo setcap cap_checkpoint_restore+eip $(which criu)
 ```
 
+3. Add permissions:
+
+For your specific user, assuming `which criu` gives `/usr/sbin/criu`:
+
+```bash
+louis ALL = NOPASSWD:/usr/sbin/criu dump *
+louis ALL = NOPASSWD:/usr/sbin/criu restore *
+```
+
+or for all users:
+
+```
+ALL ALL = NOPASSWD:/usr/sbin/criu dump *
+ALL ALL = NOPASSWD:/usr/sbin/criu restore *
+```
+
+or for the group `users`:
+
+```
+%users ALL = NOPASSWD:/usr/sbin/criu dump *
+%users ALL = NOPASSWD:/usr/sbin/criu restore *
+```
+
 ## Test Files
 
 Create a minimal test file `debug.py` (provided in this repo at `debugging/debug.py`):
