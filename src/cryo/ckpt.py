@@ -1,4 +1,6 @@
 import fcntl
+import hashlib
+import json
 import os
 import signal
 import subprocess
@@ -6,10 +8,45 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 
+from platformdirs import user_cache_dir
+
+__all__ = (
+    "_get_checkpoint_path",
+    "_generate_checkpoint_id",
+    "checkpoint",
+    "clear_checkpoints",
+)
+
+
+def _get_checkpoint_path() -> Path:
+    """Get the directory for storing checkpoints"""
+    base_dir = Path(user_cache_dir("crio"))
+    base_dir.mkdir(parents=True, exist_ok=True)
+    return base_dir
+
+
+def _generate_checkpoint_id(context: dict | None = None) -> str:
+    """Generate unique identifier for checkpoint based on Python environment"""
+    checkpoint_context = {
+        "python_version": os.sys.version,
+        # Only include environment vars that affect Python imports
+        "env": {
+            k: v
+            for k, v in os.environ.items()
+            if k.startswith(("PYTHONPATH", "PYTHONHOME"))
+        },
+    }
+
+    if context is not None:
+        checkpoint_context.update(context)
+
+    context_str = json.dumps(checkpoint_context, sort_keys=True)
+    return hashlib.sha256(context_str.encode()).hexdigest()[:16]
+
 
 @contextmanager
-def checkpoint():
-    checkpoint_dir = Path("/tmp/crio")
+def checkpoint(context: dict | None = None):
+    checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
     lock_file = checkpoint_dir / "crio.lock"
     lock_fd = None
 
@@ -96,3 +133,21 @@ def checkpoint():
                 lock_file.unlink()
             except FileNotFoundError:
                 pass
+
+
+def clear_checkpoints(context: dict | None = None) -> None:
+    """Clear all checkpoints or those matching a specific context"""
+    base_dir = _get_checkpoint_path()
+    if context is not None:
+        # Remove specific checkpoint
+        checkpoint_dir = base_dir / _generate_checkpoint_id(context)
+        if checkpoint_dir.exists():
+            import shutil
+
+            shutil.rmtree(checkpoint_dir)
+    else:
+        # Remove all checkpoints
+        import shutil
+
+        shutil.rmtree(base_dir)
+        base_dir.mkdir(parents=True)

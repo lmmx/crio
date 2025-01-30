@@ -1,2 +1,1 @@
-def main() -> None:
-    print("Hello from criu!")
+from .ckpt import checkpoint

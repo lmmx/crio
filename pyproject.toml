@@ -11,9 +11,6 @@ dependencies = [
     "platformdirs>=4.3.6",
 ]
 
-[project.scripts]
-crio = "crio:main"
-
 [build-system]
 requires = [
   "pdm-backend"
