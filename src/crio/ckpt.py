@@ -46,16 +46,34 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
 
 @contextmanager
 def checkpoint(context: dict | None = None):
-    checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
-    lock_file = checkpoint_dir / "crio.lock"
+    # Base user-level checkpoint directory
+    base_checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
+
+    # Temporary checkpoint directory in /tmp
+    tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
+
+    lock_file = base_checkpoint_dir / "crio.lock"
     lock_fd = None
 
     try:
-        # Create checkpoint directory
+        # Create base checkpoint directory
         try:
-            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            base_checkpoint_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError:
             raise RuntimeError("Cannot create checkpoint directory - permission denied")
+
+        # Create tmp checkpoint directory
+        try:
+            tmp_checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        except PermissionError:
+            raise RuntimeError(
+                "Cannot create temporary checkpoint directory - permission denied"
+            )
+
+        # Create symlink from base to tmp if it doesn't exist
+        symlink_path = base_checkpoint_dir / "ckpt"
+        if not symlink_path.exists():
+            symlink_path.symlink_to(tmp_checkpoint_dir)
 
         # Acquire lock file
         try:
@@ -70,14 +88,15 @@ def checkpoint(context: dict | None = None):
                 raise RuntimeError("Another crio process is running")
 
         # Check for existing checkpoint
-        if (checkpoint_dir / "checkpoint.exists").exists():
+        if (tmp_checkpoint_dir / "checkpoint.exists").exists():
             try:
                 subprocess.run(
                     [
+                        "sudo",
                         "criu",
                         "restore",
                         "-D",
-                        str(checkpoint_dir),
+                        str(tmp_checkpoint_dir),
                         "--unprivileged",
                         "--shell-job",
                         "--skip-in-flight",
@@ -124,12 +143,13 @@ def checkpoint(context: dict | None = None):
                     try:
                         subprocess.run(
                             [
+                                "sudo",
                                 "criu",
                                 "dump",
                                 "-t",
                                 str(pid),
                                 "-D",
-                                str(checkpoint_dir),
+                                str(tmp_checkpoint_dir),
                                 "--unprivileged",
                                 "--shell-job",
                                 "--leave-running",  # Don't kill the process after dumping
@@ -141,7 +161,7 @@ def checkpoint(context: dict | None = None):
                             ],
                             check=True,
                         )
-                        (checkpoint_dir / "checkpoint.exists").touch()
+                        (tmp_checkpoint_dir / "checkpoint.exists").touch()
                     except subprocess.CalledProcessError:
                         raise RuntimeError("Checkpoint creation failed")
                 except BaseException:
@@ -168,14 +188,35 @@ def clear_checkpoints(context: dict | None = None) -> None:
     base_dir = _get_checkpoint_path()
     if context is not None:
         # Remove specific checkpoint
-        checkpoint_dir = base_dir / _generate_checkpoint_id(context)
-        if checkpoint_dir.exists():
+        base_checkpoint_dir = base_dir / _generate_checkpoint_id(context)
+        tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
+
+        # Remove symlink and base checkpoint dir
+        if base_checkpoint_dir.exists():
             import shutil
 
-            shutil.rmtree(checkpoint_dir)
+            # Remove symlink first
+            symlink_path = base_checkpoint_dir / "ckpt"
+            if symlink_path.is_symlink():
+                symlink_path.unlink()
+
+            # Remove base checkpoint directory
+            shutil.rmtree(base_checkpoint_dir)
+
+        # Remove tmp checkpoint directory
+        if tmp_checkpoint_dir.exists():
+            import shutil
+
+            shutil.rmtree(tmp_checkpoint_dir)
     else:
         # Remove all checkpoints
+        import glob
         import shutil
 
+        # Remove user cache dir checkpoints
         shutil.rmtree(base_dir)
         base_dir.mkdir(parents=True)
+
+        # Remove all /tmp criu checkpoint directories
+        for tmp_dir in glob.glob("/tmp/criu-*"):
+            shutil.rmtree(tmp_dir)
