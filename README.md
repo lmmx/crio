@@ -47,8 +47,11 @@ print(torch.cuda.is_available())
 Behind the scenes, crio will check for an existing checkpoint to reload,
 and if it doesn't find a pre-existing one:
 
-- Run the imports
-- Get the process ID (PID) of the Python program
-- Send the SIGSTOP signal, suspending its own process
-- Use `criu` to dump the suspended Python process to disk
-- Reload the checkpoint and continue after the context manager block
+- Fork the process: the child runs the imports, the parent orchestrates the checkpoint
+- Once imports are complete, the child signals readiness and waits
+- The parent calls `criu dump` to snapshot the child's memory to disk
+- The child is released and continues normally through the rest of the script
+
+On subsequent runs, crio detects the existing checkpoint and uses `criu restore`
+to replace the current process with the saved snapshot — resuming directly after
+the context manager block with all imports already in memory.
