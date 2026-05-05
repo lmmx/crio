@@ -7,7 +7,9 @@ import subprocess
 import time
 from contextlib import contextmanager
 from pathlib import Path
+
 from platformdirs import user_cache_dir
+
 __all__ = (
     "_get_checkpoint_path",
     "_generate_checkpoint_id",
@@ -15,11 +17,13 @@ __all__ = (
     "clear_checkpoints",
 )
 
+
 def _get_checkpoint_path() -> Path:
     """Get the directory for storing checkpoints"""
     base_dir = Path(user_cache_dir("crio"))
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir
+
 
 def _generate_checkpoint_id(context: dict | None = None) -> str:
     """Generate unique identifier for checkpoint based on Python environment"""
@@ -37,13 +41,14 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
     context_str = json.dumps(checkpoint_context, sort_keys=True)
     return hashlib.sha256(context_str.encode()).hexdigest()[:16]
 
+
 @contextmanager
 def checkpoint(context: dict | None = None):
     base_checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
     tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
     lock_file = base_checkpoint_dir / "crio.lock"
     lock_fd = None
-    child_pid = None
+    _child_pid = None
     try:
         # Directory creation and locking logic remains the same
         for dir_path, err_msg in [
@@ -89,7 +94,7 @@ def checkpoint(context: dict | None = None):
                 finally:
                     os._exit(0)
             else:  # Parent
-                child_pid = pid
+                _child_pid = pid
                 # Wait for child to stop
                 while True:
                     _, status = os.waitpid(pid, os.WUNTRACED)
@@ -127,6 +132,7 @@ def checkpoint(context: dict | None = None):
             os.close(lock_fd)
             lock_file.unlink(missing_ok=True)
 
+
 def clear_checkpoints(context: dict | None = None) -> None:
     """Clear all checkpoints or those matching a specific context"""
     base_dir = _get_checkpoint_path()
@@ -137,6 +143,7 @@ def clear_checkpoints(context: dict | None = None) -> None:
         # Remove symlink and base checkpoint dir
         if base_checkpoint_dir.exists():
             import shutil
+
             # Remove symlink first
             symlink_path = base_checkpoint_dir / "ckpt"
             if symlink_path.is_symlink():
@@ -146,11 +153,13 @@ def clear_checkpoints(context: dict | None = None) -> None:
             # Remove tmp checkpoint directory
             if tmp_checkpoint_dir.exists():
                 import shutil
+
                 shutil.rmtree(tmp_checkpoint_dir)
     else:
         # Remove all checkpoints
         import glob
         import shutil
+
         # Remove user cache dir checkpoints
         shutil.rmtree(base_dir)
         base_dir.mkdir(parents=True)

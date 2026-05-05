@@ -54,7 +54,7 @@ import time
 def main():
     # Print PID for checkpointing
     print(f"Process {os.getpid()} ready for checkpointing")
-    
+
     # Block until signaled
     signal.pause()
 

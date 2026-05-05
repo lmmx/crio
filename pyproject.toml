@@ -16,3 +16,6 @@ requires = [
   "pdm-backend"
 ]
 build-backend = "pdm.backend"
+
+[tool.ruff.lint]
+ignore = ["F401"]

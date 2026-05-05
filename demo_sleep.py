@@ -9,6 +9,7 @@ with crio.checkpoint():
     print(">> Inside checkpoint: starting expensive setup")
 
     import time as _t
+
     _t.sleep(5)  # simulate heavy work
 
     setup_time = time.time()

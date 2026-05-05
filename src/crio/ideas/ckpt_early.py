@@ -48,10 +48,10 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
 def checkpoint(context: dict | None = None):
     # Base user-level checkpoint directory
     base_checkpoint_dir = _get_checkpoint_path() / _generate_checkpoint_id(context)
-    
+
     # Temporary checkpoint directory in /tmp
     tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
-    
+
     lock_file = base_checkpoint_dir / "crio.lock"
     lock_fd = None
 
@@ -66,7 +66,9 @@ def checkpoint(context: dict | None = None):
         try:
             tmp_checkpoint_dir.mkdir(parents=True, exist_ok=True)
         except PermissionError:
-            raise RuntimeError("Cannot create temporary checkpoint directory - permission denied")
+            raise RuntimeError(
+                "Cannot create temporary checkpoint directory - permission denied"
+            )
 
         # Create symlink from base to tmp if it doesn't exist
         symlink_path = base_checkpoint_dir / "ckpt"
@@ -90,9 +92,11 @@ def checkpoint(context: dict | None = None):
             try:
                 subprocess.run(
                     [
-                        "sudo", "criu",
+                        "sudo",
+                        "criu",
                         "restore",
-                        "-D", str(tmp_checkpoint_dir),
+                        "-D",
+                        str(tmp_checkpoint_dir),
                         "--unprivileged",
                         "--shell-job",
                         "--skip-in-flight",
@@ -139,10 +143,13 @@ def checkpoint(context: dict | None = None):
                     try:
                         subprocess.run(
                             [
-                                "sudo", "criu",
+                                "sudo",
+                                "criu",
                                 "dump",
-                                "-t", str(pid),
-                                "-D", str(tmp_checkpoint_dir),
+                                "-t",
+                                str(pid),
+                                "-D",
+                                str(tmp_checkpoint_dir),
                                 "--unprivileged",
                                 "--shell-job",
                                 "--leave-running",  # Don't kill the process after dumping
@@ -183,32 +190,33 @@ def clear_checkpoints(context: dict | None = None) -> None:
         # Remove specific checkpoint
         base_checkpoint_dir = base_dir / _generate_checkpoint_id(context)
         tmp_checkpoint_dir = Path(f"/tmp/criu-{_generate_checkpoint_id(context)}")
-        
+
         # Remove symlink and base checkpoint dir
         if base_checkpoint_dir.exists():
             import shutil
-            
+
             # Remove symlink first
             symlink_path = base_checkpoint_dir / "ckpt"
             if symlink_path.is_symlink():
                 symlink_path.unlink()
-            
+
             # Remove base checkpoint directory
             shutil.rmtree(base_checkpoint_dir)
-        
+
         # Remove tmp checkpoint directory
         if tmp_checkpoint_dir.exists():
             import shutil
+
             shutil.rmtree(tmp_checkpoint_dir)
     else:
         # Remove all checkpoints
         import shutil
         import glob
-        
+
         # Remove user cache dir checkpoints
         shutil.rmtree(base_dir)
         base_dir.mkdir(parents=True)
-        
+
         # Remove all /tmp criu checkpoint directories
         for tmp_dir in glob.glob("/tmp/criu-*"):
             shutil.rmtree(tmp_dir)

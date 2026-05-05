@@ -232,7 +232,7 @@ def checkpoint(context: dict | None = None):
                 # Wait for child to finish normally
                 os.waitpid(pid, 0)
 
-            except Exception as e:
+            except Exception:
                 try:
                     if child_pid:
                         os.kill(child_pid, signal.SIGKILL)

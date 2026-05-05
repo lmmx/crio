@@ -15,7 +15,7 @@ with crio.checkpoint():
     from transformers import AutoModel, AutoTokenizer
 
     t2 = datetime.now()
-    print(f"IMPORTS TOOK {(t2-t1).seconds} SECONDS")
+    print(f"IMPORTS TOOK {(t2 - t1).seconds} SECONDS")
 
 x
 print("Checkpoint completed successfully")

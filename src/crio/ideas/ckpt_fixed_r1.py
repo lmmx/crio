@@ -18,11 +18,13 @@ __all__ = (
     "clear_checkpoints",
 )
 
+
 def _get_checkpoint_path() -> Path:
     """Get the directory for storing checkpoints"""
     base_dir = Path(user_cache_dir("crio"))
     base_dir.mkdir(parents=True, exist_ok=True)
     return base_dir
+
 
 def _generate_checkpoint_id(context: dict | None = None) -> str:
     """Generate unique identifier for checkpoint based on Python environment"""
@@ -38,6 +40,7 @@ def _generate_checkpoint_id(context: dict | None = None) -> str:
         checkpoint_context.update(context)
     context_str = json.dumps(checkpoint_context, sort_keys=True)
     return hashlib.sha256(context_str.encode()).hexdigest()[:16]
+
 
 @contextmanager
 def checkpoint(context: dict | None = None):
@@ -64,7 +67,7 @@ def checkpoint(context: dict | None = None):
         try:
             lock_fd = os.open(lock_file, os.O_CREAT | os.O_RDWR)
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except (PermissionError, BlockingIOError) as e:
+        except (PermissionError, BlockingIOError):
             if lock_fd is not None:
                 os.close(lock_fd)
             raise RuntimeError("Another crio process is running or permission denied")
@@ -145,6 +148,7 @@ def checkpoint(context: dict | None = None):
                 lock_file.unlink()
             except FileNotFoundError:
                 pass
+
 
 def clear_checkpoints(context: dict | None = None) -> None:
     base_dir = _get_checkpoint_path()

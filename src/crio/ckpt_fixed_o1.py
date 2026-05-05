@@ -256,7 +256,7 @@ def checkpoint(context: dict | None = None):
                 (tmp_checkpoint_dir / "checkpoint.exists").touch()
                 print("Checkpoint created successfully")
 
-            except Exception as e:
+            except Exception:
                 try:
                     if child_pid:
                         print(f"Cleaning up child process {child_pid}")

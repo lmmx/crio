@@ -103,17 +103,19 @@ def checkpoint(context: dict | None = None):
                     ],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True
+                    text=True,
                 )
 
                 # Wait for restore to complete
                 stdout, stderr = restore_process.communicate()
-                
+
                 if restore_process.returncode != 0:
                     print(f"Restore failed. Stdout: {stdout}")
                     print(f"Restore failed. Stderr: {stderr}")
-                    raise subprocess.CalledProcessError(restore_process.returncode, restore_process.args)
-                
+                    raise subprocess.CalledProcessError(
+                        restore_process.returncode, restore_process.args
+                    )
+
             except subprocess.CalledProcessError as e:
                 print(f"Checkpoint restore failed: {e}")
                 # Clean up the checkpoint if restore fails
@@ -130,10 +132,10 @@ def checkpoint(context: dict | None = None):
                 # Clean up lock in child process
                 if lock_fd is not None:
                     os.close(lock_fd)
-                
+
                 # Yield control back to the caller
                 yield
-                
+
                 # Stop the process for checkpoint
                 os.kill(os.getpid(), signal.SIGSTOP)
             except Exception as e:
@@ -154,13 +156,15 @@ def checkpoint(context: dict | None = None):
                     except ProcessLookupError:
                         print("Child process exited unexpectedly")
                         raise RuntimeError("Child process exited unexpectedly")
-                    
+
                     if time.time() - start_time > 5:  # 5 second timeout
                         print("Child process failed to stop within timeout")
-                        raise RuntimeError("Child process failed to stop within timeout")
-                    
+                        raise RuntimeError(
+                            "Child process failed to stop within timeout"
+                        )
+
                     time.sleep(0.1)  # Prevent busy waiting
-                
+
                 # Create checkpoint with --leave-running
                 print(f"Creating checkpoint for PID {pid}")
                 subprocess.run(
@@ -185,15 +189,15 @@ def checkpoint(context: dict | None = None):
                     capture_output=True,
                     text=True,
                 )
-                
+
                 # Continue the child process after checkpoint
                 os.kill(pid, signal.SIGCONT)
-                
+
                 # Mark checkpoint as existing
                 (tmp_checkpoint_dir / "checkpoint.exists").touch()
                 print("Checkpoint created successfully")
-            
-            except Exception as e:
+
+            except Exception:
                 try:
                     if child_pid:
                         print(f"Cleaning up child process {child_pid}")
