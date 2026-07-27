@@ -22,7 +22,7 @@ def hold_lock(lock_file: Path):
         if fd is not None:
             os.close(fd)
         raise RuntimeError("Cannot create lock file — permission denied")
-    except IOError:
+    except OSError:
         if fd is not None:
             os.close(fd)
         raise RuntimeError("Another crio process is running")
