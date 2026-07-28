@@ -2,7 +2,7 @@ import os
 import subprocess
 from pathlib import Path
 
-__all__ = ("restore", "dump")
+__all__ = ("dump", "restore")
 
 _COMMON_FLAGS = (
     "--shell-job",

@@ -1,9 +1,9 @@
 import crio
 
 with crio.checkpoint():
-    import json
     import collections
     import decimal
+    import json
 
     data = {"restored": True}
 
